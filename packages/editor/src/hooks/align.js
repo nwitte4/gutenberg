@@ -2,7 +2,7 @@
  * External dependencies
  */
 import classnames from 'classnames';
-import { assign, get, has, includes } from 'lodash';
+import { assign, filter, get, has, includes } from 'lodash';
 
 /**
  * WordPress dependencies
@@ -10,6 +10,7 @@ import { assign, get, has, includes } from 'lodash';
 import { createHigherOrderComponent } from '@wordpress/compose';
 import { addFilter } from '@wordpress/hooks';
 import { hasBlockSupport, getBlockSupport, getBlockType } from '@wordpress/blocks';
+import { withSelect } from '@wordpress/data';
 
 /**
  * Internal dependencies
@@ -43,13 +44,18 @@ export function addAttribute( settings ) {
  * Returns an array of valid alignments for a block type depending on its
  * defined supports. Returns an empty array if block does not support align.
  *
- * @param  {string}   blockName Block name to check
- * @return {string[]}           Valid alignments for block
+ * @param  {string}   blockName                   Block name to check
+ * @param  {?boolean} considerWideControlsEnabled True if the function should consider wide and full alignments as supported.
+ * @return {string[]}                             Valid alignments for block
  */
-export function getBlockValidAlignments( blockName ) {
+export function getBlockValidAlignments( blockName, considerWideControlsEnabled = true ) {
 	// Explicitly defined array set of valid alignments
 	const blockAlign = getBlockSupport( blockName, 'align' );
 	if ( Array.isArray( blockAlign ) ) {
+		// remove wide and full from the array of alignments if theme does not supports them.
+		if ( ! considerWideControlsEnabled ) {
+			return filter( blockAlign, ( align ) => ( align !== 'wide' && align !== 'full' ) );
+		}
 		return blockAlign;
 	}
 
@@ -58,7 +64,7 @@ export function getBlockValidAlignments( blockName ) {
 		// `true` includes all alignments...
 		validAlignments.push( 'left', 'center', 'right' );
 
-		if ( hasBlockSupport( blockName, 'alignWide', true ) ) {
+		if ( considerWideControlsEnabled && hasBlockSupport( blockName, 'alignWide', true ) ) {
 			validAlignments.push( 'wide', 'full' );
 		}
 	}
@@ -109,10 +115,13 @@ export const withToolbarControls = createHigherOrderComponent( ( BlockEdit ) => 
  * @param  {Function} BlockListBlock Original component
  * @return {Function}                Wrapped component
  */
-export const withDataAlign = createHigherOrderComponent( ( BlockListBlock ) => {
+export const innerWithDataAlign = createHigherOrderComponent( ( BlockListBlock ) => {
 	return ( props ) => {
 		const { align } = props.block.attributes;
-		const validAlignments = getBlockValidAlignments( props.block.name );
+		const validAlignments = getBlockValidAlignments(
+			props.block.name,
+			props.wideControlsEnabled
+		);
 
 		let wrapperProps = props.wrapperProps;
 		if ( includes( validAlignments, align ) ) {
@@ -121,6 +130,14 @@ export const withDataAlign = createHigherOrderComponent( ( BlockListBlock ) => {
 
 		return <BlockListBlock { ...props } wrapperProps={ wrapperProps } />;
 	};
+} );
+
+export const withDataAlign = createHigherOrderComponent( ( BlockListBlock ) => {
+	return withSelect(
+		( select ) => ( {
+			wideControlsEnabled: select( 'core/editor' ).getEditorSettings().alignWide,
+		} )
+	)( innerWithDataAlign( BlockListBlock ) );
 }, 'withDataAlign' );
 
 /**
