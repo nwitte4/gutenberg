@@ -100,22 +100,43 @@ function gutenberg_add_rest_nonce_to_heartbeat_response_headers( $response ) {
 add_filter( 'wp_refresh_nonces', 'gutenberg_add_rest_nonce_to_heartbeat_response_headers' );
 
 /**
- * As a substitute for the default content `wpautop` filter, applies autop
- * behavior only for posts where content does not contain blocks.
+ * Ensures `wpautop` is only applied to non-block content.
  *
  * @param  string $content Post content.
- * @return string          Paragraph-converted text if non-block content.
+ * @return string          The unmodified content.
  */
 function gutenberg_wpautop( $content ) {
-	if ( has_blocks( $content ) ) {
-		return $content;
+	// If there are blocks in this content, we shouldn't run wpautop() on it later.
+	$priority = has_filter( 'the_content', 'wpautop' );
+	if ( false !== $priority && doing_filter( 'the_content' ) && has_blocks( $content ) ) {
+		remove_filter( 'the_content', 'wpautop', $priority );
+		add_filter( 'the_content', 'wpautop', $priority + 1 );
 	}
 
-	return wpautop( $content );
+	return $content;
 }
-remove_filter( 'the_content', 'wpautop' );
 add_filter( 'the_content', 'gutenberg_wpautop', 6 );
 
+/**
+ * If gutenberg_wpautop() needs to remove wp_autop() from the `the_content` filter,
+ * this re-adds it afterwards, for subsequent `the_content` usage.
+ *
+ * @access private
+ *
+ * @since 4.4
+ *
+ * @param  string $content Post content.
+ * @return string          The unmodified content.
+ */
+function _gutenberg_restore_wpautop_hook( $content ) {
+    global $wp_filter;
+    $current_priority = $wp_filter['the_content']->current_priority();
+
+    add_filter( 'the_content', 'wpautop', $current_priority - 1 );
+    remove_filter( 'the_content', '_gutenberg_restore_wpautop_hook', $current_priority );
+
+    return $content;
+}
 
 /**
  * Check if we need to load the block warning in the Classic Editor.
